@@ -1,6 +1,6 @@
 {
   "name": "apiai-importer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI Tool for importing intents from a CSV file into API.ai",
   "bin": {
     "apiai-import": "index.js"
