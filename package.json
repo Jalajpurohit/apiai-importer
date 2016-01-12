@@ -11,14 +11,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/brandonhorst/apiai-importer.git"
+    "url": "git+https://github.com/AdmitHub/apiai-importer.git"
   },
   "author": "@brandonhorst",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/brandonhorst/apiai-importer/issues"
+    "url": "https://github.com/AdmitHub/apiai-importer/issues"
   },
-  "homepage": "https://github.com/brandonhorst/apiai-importer#readme",
+  "homepage": "https://github.com/AdmitHub/apiai-importer#readme",
   "dependencies": {
     "async": "^1.5.2",
     "commander": "^2.9.0",
