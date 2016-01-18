@@ -1,6 +1,16 @@
 {
-  "apiai": {
-    "subscription_key": "",
-    "access_token": ""
+  "env": {
+    "dev": {
+      "apiai": {
+        "subscription_key": "",
+        "access_token": ""
+      }
+    },
+    "test": {
+      "apiai": {
+        "subscription_key": "",
+        "access_token": ""
+      }
+    }
   }
 }
