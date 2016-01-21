@@ -40,7 +40,7 @@ const parseFunctions = {
   intents (data) {
     return parsePromise(data, {
       columns () {
-        return ['url', 'statement', 'synonyms', 'topic', 'outputContext', 'inputContext']
+        return ['info', 'statement', 'synonyms', 'topic', 'outputContext', 'inputContext']
       }
     })
   },
@@ -76,7 +76,8 @@ const cleanFunctions = {
   },
 
   intents (data) {
-    if (!data.topic || !data.statement) return
+    if (!data.topic || !data.statement || _.startsWith(data.info, 'SKIP')) return
+      
     const synonyms = data.synonyms ? data.synonyms.split(';') : []
 
     return {
