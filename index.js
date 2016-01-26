@@ -21,19 +21,25 @@ program
   .version(pkg.version)
   .option('-d, --directory <dir>', 'Specify a directory that contains "Answers.csv", "Entities.csv", and "Intents.csv"')
   .option('-e, --env <"test"|"dev">', 'specify an environment to import to (as declared in conf.json)')
-  .option('-i, --intents <file>', 'Specify an intents CSV file')
-  .option('-e, --entities <file>', 'Specify an entities CSV file')
-  .option('-a, --answers <file>', 'Specify an answers CSV file')
-  .option('-o, --answer-output <file>', 'Specificy an output file for the Answers JSON (defaults to ./[epoch]-answers.json')
+  .option('-o, --answer-output <file>', 'Specify an output file for the Answers JSON (defaults to ./[epoch]-answers.json')
+  .option('-s, --subject <string>', 'Specify a subject to be deleted (or * to delete all)')
   .parse(process.argv)
 
-if (program.directory) {
-  program.intents = path.join(program.directory, 'Intents.csv')
-  program.answers = path.join(program.directory, 'Answers.csv')
-  program.entities = path.join(program.directory, 'Entities.csv')
-  if (!program.answerOutput) {
-    program.answerOutput = `${Math.floor(new Date() / 1000)}-answers.json`
-  }
+if (!program.subject || !program.directory) {
+  console.log('-s and -d are not optional')
+  process.exit()
+}
+
+program.intents = path.join(program.directory, 'Intents.csv')
+program.answers = path.join(program.directory, 'Answers.csv')
+program.entities = path.join(program.directory, 'Entities.csv')
+
+if (!program.answerOutput) {
+  program.answerOutput = `${Math.floor(new Date() / 1000)}-answers.json`
+}
+
+if (!program.env) {
+  program.env = 'dev'
 }
 
 const parseFunctions = {
@@ -62,6 +68,16 @@ const parseFunctions = {
   }
 }
 
+function subPaths (input) {
+  const components = input.split('/')
+  const outputs = []
+
+  for (var i = 1; i < components.length; i++) {
+    outputs.push(components.slice(0, i + 1).join('/'))
+  }
+  return outputs
+}
+
 const cleanFunctions = {
   entities (data) {
     if (!data.name || !data.synonyms) return
@@ -77,13 +93,19 @@ const cleanFunctions = {
 
   intents (data) {
     if (!data.topic || !data.statement || _.startsWith(data.info, 'SKIP')) return
-      
+
     const synonyms = data.synonyms ? data.synonyms.split(';') : []
+    const outputContexts = (
+      data.outputContext ? data.outputContext.split(';') : []
+    ).concat(subPaths(data.topic))
+    const inputContexts = (
+      data.inputContext ? data.inputContext.split(';') : []
+    ).concat(`/${data.topic.split('/')[1]}`)
 
     return {
       inputs: [data.statement].concat(synonyms),
-      outputContexts: data.outputContext ? [data.outputContext] : [],
-      inputContexts: data.inputContext ? [data.inputContext] : [],
+      outputContexts,
+      inputContexts,
       topic: data.topic,
       answer: data.answer
     }
@@ -154,7 +176,7 @@ const pushFunctions = {
 function apiCall(endpoint, options) {
   if (!options) options = {}
 
-  const env = program.env || 'dev'
+  const env = program.env
   if (!conf.env || !conf.env[env] || !conf.env[env].apiai) {
     console.log('Invalid conf.json file or invalid env specified:', env)
     return Promise.reject()
@@ -173,17 +195,34 @@ function apiCall(endpoint, options) {
   })
 }
 
+function filterName (type, name) {
+  if (program.subject === '*') {
+    return true
+  }
+
+  if (type === 'intents') {
+    return _.startsWith(name, `/${program.subject}/`)
+  } else {
+    return _.startsWith(name, `${program.subject}-`)
+  }
+}
+
 function deleteAll (type) {
   console.log(`** Deleting All ${_.capitalize(type)} **`)
 
   return apiCall(type).then(res => {
-    const deletePromises = _.map(res, item => {
-      console.log(`    Deleting ${type} ${item.name}`)
+    const deletePromises = _.chain(res)
+    .map(item => {
+      if (filterName(type, item.name)) {
+        console.log(`    Deleting ${type} ${item.name}`)
 
-      return apiCall(`${type}/${item.id}`, {method: 'DELETE'}).then(res => {
-        console.log(`    Deleted ${type} ${item.name}`)
-      })
+        return apiCall(`${type}/${item.id}`, {method: 'DELETE'}).then(res => {
+          console.log(`    Deleted ${type} ${item.name}`)
+        })
+      }
     })
+    .filter()
+    .value()
 
     return Promise.all(deletePromises)
   }).then(() => {

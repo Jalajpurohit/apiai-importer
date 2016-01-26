@@ -16,7 +16,7 @@ cp conf.json.example conf.json
 First, download the Intents and Entities sheets from the Google Doc, using the script below.
 
 ```sh
-apiai-import -d ~/Google Drive/fafsa*\
+apiai-import -d ~/Google Drive/fafsa*\ -s 'FAFSA'
 ```
 
 ## Notes
