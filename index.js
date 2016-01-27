@@ -82,39 +82,49 @@ const cleanFunctions = {
   entities (data) {
     if (!data.name || !data.synonyms) return
 
-    const synonyms = data.synonyms.split(';')
+    const synonyms = data.synonyms.trim().split(';')
 
     return {
       word: synonyms[0],
       synonyms: synonyms,
-      name: data.name.substr(1)
+      name: data.name.trim().substr(1)
     }
   },
 
   intents (data) {
     if (!data.topic || !data.statement || _.startsWith(data.info, 'SKIP')) return
 
-    const synonyms = data.synonyms ? data.synonyms.split(';') : []
+    const topic = data.topic.trim()
+    const statement = data.statement.trim()
+    const synonyms = (data.synonyms && data.synonyms.trim() !== '')
+      ? data.synonyms.trim().split(';')
+      : []
     const outputContexts = (
-      data.outputContext ? data.outputContext.split(';') : []
-    ).concat(subPaths(data.topic))
+      (data.outputContext && data.outputContext.trim() !== '')
+        ? data.outputContext.trim().split(';')
+        : []
+    ).concat(subPaths(topic))
     const inputContexts = (
-      data.inputContext ? data.inputContext.split(';') : []
-    ).concat(`/${data.topic.split('/')[1]}`)
+      (data.inputContext && data.inputContext.trim() !== '')
+        ? data.inputContext.trim().split(';')
+        : []
+    ).concat(`/${topic.split('/')[1]}`)
 
     return {
       inputs: [data.statement].concat(synonyms),
       outputContexts,
       inputContexts,
-      topic: data.topic,
-      answer: data.answer
+      topic
     }
   },
 
   answers (data) {
     if (!data.topic || !data.answer) return
 
-    return data
+    return {
+      topic: data.topic.trim(),
+      answer: data.answer.trim()
+    }
   }
 }
 
