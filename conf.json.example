@@ -6,7 +6,7 @@
         "access_token": ""
       }
     },
-    "test": {
+    "stage": {
       "apiai": {
         "subscription_key": "",
         "access_token": ""
