@@ -1,41 +1,45 @@
 #!/usr/bin/env node
 
 const _ = require('lodash')
-const pkg = require('./package')
-const conf = require('./conf')
 const fs = require('fs')
 const parse = require('csv-parse')
 const path = require('path')
 const program = require('commander')
-const request = require('request')
+// const request = require('request')
 const thenify = require('thenify')
 const through = require('through')
 const util = require('util')
 
 const readFilePromise = thenify(fs.readFile)
 const writeFilePromise = thenify(fs.writeFile)
-const requestPromise = thenify(request)
+// const requestPromise = thenify(request)
 const parsePromise = thenify(parse)
 
 program
-  .version(pkg.version)
-  .option('-d, --directory <dir>', 'Specify a directory that contains "Answers.csv", "Entities.csv", and "Intents.csv"')
-  .option('-e, --env <"test"|"dev">', 'specify an environment to import to (as declared in conf.json)')
-  .option('-o, --answer-output <file>', 'Specify an output file for the Answers JSON (defaults to ./[epoch]-answers.json')
-  .option('-s, --subject <string>', 'Specify a subject to be deleted (or * to delete all)')
+  .option('-d, --directory <dir>', 'Specify a directory that contains "Answers.csv", "Entities.csv", and "Intents.csv" (defaults to cwd)')
+  .option('-o, --output-dir <file>', 'Specify an output dir for the JSON (defaults to cwd)')
+  // .option('-s, --subject <string>', 'Specify a subject to be deleted (or * to delete all)')
   .parse(process.argv)
 
-if (!program.subject || !program.directory) {
-  console.log('-s and -d are not optional')
-  process.exit()
+// if (!program.subject || !program.directory) {
+//   console.log('-s and -d are not optional')
+//   process.exit()
+// }
+
+if (!program.directory) {program.directory = ''}
+if (!program.outputDirectory) {program.outputDirectory = ''}
+
+const inputPaths = {
+  intents: path.join(program.directory, 'Intents.csv'),
+  answers: path.join(program.directory, 'Answers.csv'),
+  entities: path.join(program.directory, 'Entities.csv')
 }
 
-program.intents = path.join(program.directory, 'Intents.csv')
-program.answers = path.join(program.directory, 'Answers.csv')
-program.entities = path.join(program.directory, 'Entities.csv')
+const timestamp = Math.floor(new Date() / 1000)
 
-if (!program.answerOutput) {
-  program.answerOutput = `${Math.floor(new Date() / 1000)}-answers.json`
+const outputPaths = {
+  entities: path.join(program.outputDirectory, `output-entities-${timestamp}.json`),
+  understandings: path.join(program.outputDirectory, `output-understandings-${timestamp}.json`)
 }
 
 if (!program.env) {
@@ -85,7 +89,6 @@ const cleanFunctions = {
     const synonyms = data.synonyms.trim().split(';')
 
     return {
-      word: synonyms[0],
       synonyms: synonyms,
       name: data.name.trim().substr(1)
     }
@@ -97,21 +100,17 @@ const cleanFunctions = {
     const topic = data.topic.trim()
     const statement = data.statement.trim()
     const synonyms = (data.synonyms && data.synonyms.trim() !== '')
-      ? data.synonyms.trim().split(';')
+      ? data.synonyms.split(';').map(str => str.trim())
       : []
-    const outputContexts = (
-      (data.outputContext && data.outputContext.trim() !== '')
-        ? data.outputContext.trim().split(';')
+    const outputContexts = (data.outputContext && data.outputContext.trim() !== '')
+        ? data.outputContext.split(';').map(str => str.trim())
         : []
-    ).concat(subPaths(topic))
-    const inputContexts = (
-      (data.inputContext && data.inputContext.trim() !== '')
-        ? data.inputContext.trim().split(';')
+    const inputContexts = (data.inputContext && data.inputContext.trim() !== '')
+        ? data.inputContext.split(';').map(str => str.trim())
         : []
-    ).concat(`/${topic.split('/')[1]}`)
 
     return {
-      inputs: [data.statement].concat(synonyms),
+      questions: [data.statement].concat(synonyms),
       outputContexts,
       inputContexts,
       topic
@@ -128,80 +127,42 @@ const cleanFunctions = {
   }
 }
 
-const pushFunctions = {
- intents (data) {
-    const pushPromises = _.map(data, item => {
-      const body = {
-        name: item.topic,
-        auto: true,
-        templates: item.inputs,
-        contexts: item.inputContexts,
-        responses: [{
-          action: item.topic,
-          resetContexts: !item.outputContexts.length,
-          affectedContexts: item.outputContexts
-        }]
-      }
-
-      console.log(`    Importing Intent ${item.topic}`)
-
-      return apiCall('intents', {method: 'POST', body}).then((res) => {
-        console.log(`    Imported Intent ${item.topic} as ${res.id}`)
-      })
-    })
-
-    return Promise.all(pushPromises)
-  },
-
-  entities (data) {
-    const pushPromises = _.map(data, item => {
-      const body = {
-        name: item.name,
-        entries: [{
-          value: item.word,
-          synonyms: item.synonyms
-        }]
-      }
-
-      console.log(`    Importing Entity ${item.name}`)
-
-      return apiCall('entities', {method: 'POST', body}).then(res => {
-        console.log(`    Imported Entity ${item.name} as ${res.id}`)
-      })
-    })
-
-    return Promise.all(pushPromises)
-  },
-
-  answers (data) {
-    console.log('    Writing Answers File')
-    return Promise.resolve().then(() => {
-      return writeFilePromise(program.answerOutput, JSON.stringify(data, null, 2))
-    }).then(() => {
-      console.log(`    Wrote Answers File to ${program.answerOutput}`)
-    })
-  }
+function writeEntities (data) {
+  console.log('    Writing Entities File')
+  return Promise.resolve().then(() => {
+    return writeFilePromise(outputPaths.entities, JSON.stringify(data, null, 2))
+  }).then(() => {
+    console.log(`    Wrote Entities File to ${outputPaths.entities}`)
+  })
 }
 
-function apiCall(endpoint, options) {
-  if (!options) options = {}
+function buildUnderstandings(intents, answers) {
+  return _.chain(intents)
+    .groupBy('topic')
+    .map((intentGroup, topic) => {
+      const thisAnswer = _.find(answers, {topic: topic})
+      if (!thisAnswer) return 
 
-  const env = program.env
-  if (!conf.env || !conf.env[env] || !conf.env[env].apiai) {
-    console.log('Invalid conf.json file or invalid env specified:', env)
-    return Promise.reject()
-  }
+      return {
+        topic: topic,
+        questionGroups: _.map(intentGroup, intent => ({
+          inputContexts: intent.inputContexts,
+          questions: intent.questions
+        })),
+        answer: thisAnswer.answer,
+        outputContexts: []
+      }
+    })
+    .filter()
+    .value()
+}
 
-  return requestPromise({
-    url: `https://api.api.ai/v1/${endpoint}`,
-    method: options.method || 'GET',
-    qs: {v: '20150910'},
-    body: options.body,
-    json: true,
-    auth: {bearer: conf.env[env].apiai.access_token},
-    headers: {'ocp-apim-subscription-key': conf.env[env].apiai.subscription_key}
-  }).then(res => {
-    return res[1]
+function writeUnderstandings (data) {
+  console.log('    Writing Understandings File')
+  return Promise.resolve().then(() => {
+    return writeFilePromise(outputPaths.understandings, JSON.stringify(data, null, 2))
+  }).then(() => {
+    console.log(`    Wrote Understandings File to ${outputPaths.understandings}`)
   })
 }
 
@@ -217,79 +178,34 @@ function filterName (type, name) {
   }
 }
 
-function deleteAll (type) {
-  console.log(`** Deleting All ${_.capitalize(type)} **`)
-
-  return apiCall(type).then(res => {
-    const deletePromises = _.chain(res)
-    .map(item => {
-      if (filterName(type, item.name)) {
-        console.log(`    Deleting ${type} ${item.name}`)
-
-        return apiCall(`${type}/${item.id}`, {method: 'DELETE'}).then(res => {
-          console.log(`    Deleted ${type} ${item.name}`)
-        })
-      }
-    })
-    .filter()
-    .value()
-
-    return Promise.all(deletePromises)
-  }).then(() => {
-    console.log(`** Deleted All ${_.capitalize(type)} **`)
-  })
-}
-
-function importAll (type) {
-  console.log(`** Importing ${_.capitalize(type)} **`)
-
-  return readFilePromise(program[type], {encoding: 'UTF-8'}).then(csvData => {
-    return parseFunctions[type](csvData)
-  }).then(data => {
-    return _.chain(data)
-      .map(cleanFunctions[type])
-      .filter()
-      .value()
-  }).then(pushFunctions[type])
-  .then(() => {
-     console.log(`** Finished Importing ${_.capitalize(type)} **`);
-  })
-}
-
-function getTypes (del) {
-  const types = []
-  if (del) {
-    if (program.intents) types.push('intents')
-    if (program.entities) types.push('entities')
-  } else {
-    if (program.entities) types.push('entities')
-    if (program.intents) types.push('intents')
-    if (program.answers) types.push('answers')
-  }
-
-  return types
-}
-
-function applyInSeries(types, func) {
-  return _.reduce(types, (promise, type) => {
-    return promise.then(() => func(type))
-  }, Promise.resolve())
-}
-
 function run () {
-  const types = getTypes()
-
   console.log('**** Starting ****')
 
   // Order matters here, because we can only delete entities if there are no intents referencing them
   Promise.resolve().then(() => {
-    return applyInSeries(getTypes(true), deleteAll)
-  }).then(() => {
-    console.log('** Done Deleting **')
-  }).then(() => {
-    return applyInSeries(getTypes(), importAll)
-  }).then(() => {
-    console.log('** Done Inserting **')
+    const dataPromises = _.map(['intents', 'entities', 'answers'], (type) => {
+      return readFilePromise(inputPaths[type], {encoding: 'UTF-8'}).then(csvData => {
+        return parseFunctions[type](csvData)
+      }).then(data => {
+        return _.chain(data)
+          .map(cleanFunctions[type])
+          .filter()
+          .value()
+      })
+    })
+
+    return Promise.all(dataPromises).then(dataAry => {
+      return {
+        intents: dataAry[0],
+        entities: dataAry[1],
+        answers: dataAry[2]
+      }
+    }).then(data => {
+      return Promise.all([
+        writeEntities(data.entities),
+        writeUnderstandings(buildUnderstandings(data.intents, data.answers))
+      ])
+    })
   }).then(() => {
     console.log('**** Done ****')
   }).catch(err => {
