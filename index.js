@@ -86,7 +86,7 @@ const cleanFunctions = {
   entities (data) {
     if (!data.name || !data.synonyms) return
 
-    const synonyms = data.synonyms.trim().split(';')
+    const synonyms = data.synonyms.split(';').map(str => str.trim())
 
     return {
       synonyms: synonyms,
