@@ -90,23 +90,23 @@ const cleanFunctions = {
 
     return {
       synonyms: synonyms,
-      name: data.name.trim().substr(1)
+      name: data.name.trim().substr(1).toLowerCase()
     }
   },
 
   intents (data) {
     if (!data.topic || !data.statement || _.startsWith(data.info, 'SKIP')) return
 
-    const topic = data.topic.trim()
+    const topic = data.topic.trim().toLowerCase()
     const statement = data.statement.trim()
     const synonyms = (data.synonyms && data.synonyms.trim() !== '')
       ? data.synonyms.split(';').map(str => str.trim())
       : []
     const outputContexts = (data.outputContext && data.outputContext.trim() !== '')
-        ? data.outputContext.split(';').map(str => str.trim())
+        ? data.outputContext.split(';').map(str => str.trim().toLowerCase())
         : []
     const inputContexts = (data.inputContext && data.inputContext.trim() !== '')
-        ? data.inputContext.split(';').map(str => str.trim())
+        ? data.inputContext.split(';').map(str => str.trim().toLowerCase())
         : []
 
     return {
@@ -121,7 +121,7 @@ const cleanFunctions = {
     if (!data.topic || !data.answer) return
 
     return {
-      topic: data.topic.trim(),
+      topic: data.topic.trim().toLowerCase(),
       answer: data.answer.trim()
     }
   }
