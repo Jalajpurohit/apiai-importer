@@ -15,6 +15,8 @@ const writeFilePromise = thenify(fs.writeFile)
 // const requestPromise = thenify(request)
 const parsePromise = thenify(parse)
 
+const date = new Date();
+
 program
   .option('-d, --directory <dir>', 'Specify a directory that contains "Answers.csv", "Entities.csv", and "Intents.csv" (defaults to cwd)')
   .option('-o, --output-dir <file>', 'Specify an output dir for the JSON (defaults to cwd)')
@@ -86,7 +88,7 @@ const cleanFunctions = {
   entities (data) {
     if (!data.name || !data.synonyms) return
 
-    const synonyms = data.synonyms.split(';').map(str => str.trim())
+    const synonyms = _.filter(data.synonyms.split(';').map(str => str.trim()))
 
     return {
       synonyms: synonyms,
@@ -100,13 +102,13 @@ const cleanFunctions = {
     const topic = data.topic.trim().toLowerCase()
     const statement = data.statement.trim()
     const synonyms = (data.synonyms && data.synonyms.trim() !== '')
-      ? data.synonyms.split(';').map(str => str.trim())
+      ? _.filter(data.synonyms.split(';').map(str => str.trim()))
       : []
     const outputContexts = (data.outputContext && data.outputContext.trim() !== '')
-        ? data.outputContext.split(';').map(str => str.trim().toLowerCase())
+        ? _.filter(data.outputContext.split(';').map(str => str.trim().toLowerCase()))
         : []
     const inputContexts = (data.inputContext && data.inputContext.trim() !== '')
-        ? data.inputContext.split(';').map(str => str.trim().toLowerCase())
+        ? _.filter(data.inputContext.split(';').map(str => str.trim().toLowerCase()))
         : []
 
     return {
@@ -136,6 +138,18 @@ function writeEntities (data) {
   })
 }
 
+function buildEntities(entities) {
+  return _.map(entities, entity => ({
+    created: date,
+    updated: date,
+    name: entity.name,
+    synonymGroups: [{
+      messagingService: "georgia",
+      synonyms: entity.synonyms
+    }]
+  }));
+}
+
 function buildUnderstandings(intents, answers) {
   return _.chain(intents)
     .groupBy('topic')
@@ -144,12 +158,19 @@ function buildUnderstandings(intents, answers) {
       if (!thisAnswer) return 
 
       return {
+        created: date,
+        updated: date,
         topic: topic,
+        keywords: [],
         questionGroups: _.map(intentGroup, intent => ({
           inputContexts: intent.inputContexts,
-          questions: intent.questions
+          fuzzyQuestions: intent.questions,
+          exactQuestions: []
         })),
-        answer: thisAnswer.answer,
+        answerGroups: [{
+          messagingService: "georgia",
+          answers: [thisAnswer.answer],
+        }],
         outputContexts: []
       }
     })
@@ -202,7 +223,7 @@ function run () {
       }
     }).then(data => {
       return Promise.all([
-        writeEntities(data.entities),
+        writeEntities(buildEntities(data.entities)),
         writeUnderstandings(buildUnderstandings(data.intents, data.answers))
       ])
     })
